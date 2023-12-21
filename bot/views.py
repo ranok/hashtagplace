@@ -29,7 +29,11 @@ def webfinger(request):
     try:
         actor = LocalActor.objects.get(username = username, domain = domain)
     except LocalActor.DoesNotExist:
-        return HttpResponseNotFound('')
+        if domain == settings.DOMAINS[0]:
+            actor = LocalActor.objects.create(username = username, domain = domain)
+            actor.fill_in_bits()
+        else:
+            return HttpResponseNotFound('')
     data = {
         "subject": f"acct:{actor.username}@{actor.domain}",
         "links": [
@@ -104,7 +108,7 @@ class ProfileView(ActorView):
         if self.request.accepts('text/html'):
             return render(self.request, self.get_template_names(), {'actor': actor, 'profile': actor.actor_json(), 'page': page,})
         else:
-            return JsonResponse(actor.actor_json())
+            return JsonResponse(actor.actor_json(), content_type='application/activity+json')
 
 class UpdateProfileView(ActorView):
     http_method_names = ['post']
@@ -121,7 +125,7 @@ class FollowersView(ActorView):
     def get(self, request, *args, **kwargs):
         actor = self.get_actor()
         json = actor.followers_json()
-        return JsonResponse(json)
+        return JsonResponse(json, content_type='application/activity+json')
 
 class InboxView(CSRFExemptMixin, ActorView):
     def post(self, request, *args, **kwargs):
@@ -152,7 +156,7 @@ class OutboxView(ActorView):
     def get(self, request, *args, **kwargs):
         actor = self.get_actor()
         json = actor.outbox_json()
-        return JsonResponse(json)
+        return JsonResponse(json, content_type='application/activity+json')
 
 class NoteView(ActorView):
     def get_note(self):
@@ -171,4 +175,10 @@ class CreateNoteView(CSRFExemptMixin, RequireTokenMixin, ActorView):
     def post(self, request, *args, **kwargs):
         content = request.POST['content']
         note = self.get_actor().create_note(content)
+        return redirect(note.get_absolute_url())
+
+class AnnounceNoteView(CSRFExemptMixin, RequireTokenMixin, ActorView):
+    def post(self, request, *args, **kwargs):
+        uri = request.POST['uri']
+        note = self.get_actor().create_announce(uri)
         return redirect(note.get_absolute_url())

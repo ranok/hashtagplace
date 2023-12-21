@@ -1,8 +1,44 @@
 from   . import activitystreams
 from   .send_signed_message import signed_post
 from   django.utils import dateparse
-from   huey.contrib.djhuey import task
+from   huey.contrib.djhuey import task, periodic_task
+from huey import crontab
 import json
+
+@periodic_task(crontab(day='*/3'))
+def purge_unfollowed():
+    accts = LocalActor.objects.all()
+    for a in accts:
+        if len(a.followers.all()) == 0:
+            a.delete()
+
+@periodic_task(crontab(minute='*/5'))
+def check_for_new_posts():
+    from .models import LocalActor
+    import requests
+    print("Checking for new posts!")
+    accts = LocalActor.objects.all()
+    search_domain = "https://mastodon.social/api/v1/timelines/tag/"
+    for a in accts:
+        if len(a.followers.all()) == 0:
+            continue
+        print(f"Handling {a.username}!")
+        uris = set()
+        if a.since_id == '':
+            res = requests.get(search_domain + a.username + '?limit=5').json()
+        else:
+            res = requests.get(search_domain + a.username + '?since_id=' + a.since_id).json()
+        if len(res) == 0:
+            continue
+        a.since_id = res[0].get('id', '')
+        a.save()
+        for status in res:
+            uris.add(status.get('uri'))
+        uris.add(None)
+        uris.remove(None)
+        print(f"Got {len(uris)} to announce!")
+        for uri in list(uris):
+            a.create_announce(uri)
 
 @task()
 def update_profile(actor):

@@ -40,5 +40,9 @@ urlpatterns = [
         views.CreateNoteView.as_view(),
         name='note_create'
     ),
+    path('<str:username>/announce_note',
+        views.AnnounceNoteView.as_view(),
+        name='note_announce'
+    ),
 ]
 

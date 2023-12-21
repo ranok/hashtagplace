@@ -79,15 +79,15 @@ class LocalActor(AbstractActor):
     actor_json_file = models.FileField(upload_to = local_actor_dir, null=True, blank=True)
 
     inbox_handler_cls = InboxHandler
-
+    since_id = models.CharField(max_length=50, blank=True)
     def fill_in_bits(self):
         self.actor_json_file.save(
             'actor.json', 
             ContentFile(json.dumps({
                 "type": "Service",
                 "preferredUsername": self.username,
-                "name": self.username,
-                "summary": ""
+                "name": "#" + self.username,
+                "summary": "Bridge to mirror posts with the #" + self.username + " hashtag."
             }, indent = 4))
         )
 
@@ -121,16 +121,22 @@ class LocalActor(AbstractActor):
         with self.public_key_file.open('rb') as f:
             return f.read()
 
-    @with_context([activitystreams.ACTIVITYSTREAMS_CONTEXT, activitystreams.SECURITY_CONTEXT])
+    #@with_context(activitystreams.ACTIVITYSTREAMS_CONTEXT)
     def actor_json(self):
         with self.actor_json_file.open() as f:
-            data = json.load(f)
+            data = {"@context": activitystreams.ACTIVITYSTREAMS_CONTEXT,"id": self.get_absolute_url()}
+            data.update(json.load(f))
 
         data.update({
             "id": self.get_absolute_url(),
             "followers": self.get_followers_url(),
             "inbox": self.get_inbox_url(),
             "outbox": self.get_outbox_url(),
+            "url": self.get_absolute_url(),
+            "icon": {
+                "type": "Image",
+                "url": "https://hashtag.place/activitypub/static/htplacelogosmall.png"
+            },
             "publicKey": {
                 "id": self.get_public_key_url(),
                 "owner": self.get_absolute_url(),
@@ -177,7 +183,8 @@ class LocalActor(AbstractActor):
 
     def send_to_inbox(self, remote_actor, message):
         message = message.copy()
-        message['to'] = [remote_actor.get_absolute_url()]
+        message['to'] = [activitystreams.PUBLIC]
+        message['cc'] = [remote_actor.get_absolute_url()]
         return self.send_signed_message(remote_actor.get_inbox_url(), message)
 
     def distribute_message(self, message, recipients):
@@ -199,6 +206,13 @@ class LocalActor(AbstractActor):
         note = Note.create(self, content, **kwargs)
 
         self.send_to_followers(note.create_message())
+        
+        return note
+
+    def create_announce(self, object_url, **kwargs):
+        note = Note.create(self, None, object_uri = object_url, **kwargs)
+
+        self.send_to_followers(note.announce_message(object_url))
         
         return note
 
@@ -349,7 +363,7 @@ class Note(models.Model):
     announces = models.ManyToManyField(RemoteActor, related_name='announces', blank=True)
     public = models.BooleanField(default=True)
     mentions = models.ManyToManyField(LocalActor, related_name='mentions', blank=True)
-
+    announce_uri = models.CharField(max_length = 200, blank=True)
     updated_at = models.DateTimeField(null = True, auto_now = True)
 
     in_reply_to = models.ForeignKey('self', null=True, blank=True, related_name='replies', on_delete=models.SET_NULL)
@@ -381,10 +395,13 @@ class Note(models.Model):
         return data
 
     @classmethod
-    def create(cls, actor, content, to = None, in_reply_to=None, extra_data = None):
-        data = {
-            'content': content,
-        }
+    def create(cls, actor, content, object_uri = '', to = None, in_reply_to=None, extra_data = None):
+        if content != None:
+            data = {
+                'content': content,
+            }
+        else:
+            data = {}
         if extra_data:
             data.update(extra_data)
 
@@ -393,6 +410,7 @@ class Note(models.Model):
         note = cls.objects.create(
             local_actor = actor, 
             data = data,
+            announce_uri = object_uri,
             public = to is None,
             in_reply_to = in_reply_to
         )
@@ -406,13 +424,23 @@ class Note(models.Model):
         data = self.data.copy()
         
         if self.local_actor:
-            data.update({
-                'published': activitystreams.format_datetime(self.published_date),
-                'attributedTo': self.actor.get_absolute_url(),
-                'id': self.get_absolute_url(),
-                'type': 'Note',
-                'to': [activitystreams.PUBLIC] if self.public else [r.get_absolute_url() for r in self.to.all()]
-            })
+            if self.announce_uri == '':
+                data.update({
+                    'published': activitystreams.format_datetime(self.published_date),
+                    'attributedTo': self.actor.get_absolute_url(),
+                    'id': self.get_absolute_url(),
+                    'type': 'Note',
+                    'to': [activitystreams.PUBLIC] if self.public else [r.get_absolute_url() for r in self.to.all()]
+                })
+            else:
+                data.update({
+                    'published': activitystreams.format_datetime(self.published_date),
+                    'attributedTo': self.actor.get_absolute_url(),
+                    'id': self.get_absolute_url(),
+                    'type': 'Announce',
+                    'object': self.announce_uri,
+                    'to': [activitystreams.PUBLIC] if self.public else [r.get_absolute_url() for r in self.to.all()]
+                })
             if self.in_reply_to:
                 data['inReplyTo'] = self.in_reply_to.get_absolute_url()
 
@@ -427,6 +455,15 @@ class Note(models.Model):
             'type': 'Create',
             'actor': self.actor.get_absolute_url(),
             'object': self.note_json(),
+        })
+
+    @activitystreams.with_context(activitystreams.ACTIVITYSTREAMS_CONTEXT)
+    def announce_message(self, object_url : str):
+        self.announce_uri = object_url
+        return self.add_unique_id({
+            'type': 'Announce',
+            'actor': self.actor.get_absolute_url(),
+            'object': object_url,
         })
 
     @activitystreams.with_context()
