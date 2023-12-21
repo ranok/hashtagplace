@@ -1,14 +1,6 @@
-# A Django ActivityPub bot server
+# Hashtag Place ActivityPub server
 
-This is a [Django](https://www.djangoproject.com/) project for serving ActivityPub actors, designed for bot accounts.
-
-The aim is to provide just enough features to provide an account that other people can follow, and to manage followers and sending out new posts.
-
-I'm sharing this code as-is, only because it doesn't cost me anything other than the time to write this README!
-
-I hope it's useful, and you're very welcome to use it as a starting-point to build your own project.
-
-If you're looking for a more extensible Python ActivityPub implementation, [bovine](https://github.com/HelgeKrueger/bovine) is worth looking at first.
+Based on [django-activitypub-bot](https://github.com/christianp/django-activitypub-bot), this is a server that allows the seamless following of ActivityPub hashtags as bot accounts, for smaller instances that may not see these posts, or implementations that do not allow for following hashtags directly. The "main" instance is hosted at [Hashtag.place](https://hashtag.place)
 
 ## Installation
 
@@ -85,21 +77,6 @@ python manage.py createsuperuser
 ```
 
 If everything is set up properly, `https://{DOMAIN}/activitypub/admin` will show you the Django admin login screen.
-
-## Usage
-
-You can create an actor on the command-line with the `create_actor` management command:
-
-```
-python manage.py create_actor
-```
-
-You'll be asked to choose the domain it should exist on, and to give a username. You can optionally create an API access token.
-
-You can write a post through the admin interface: click on *Local actors*, then on the actor you want to create the post, and then click the *Create a note* link at the bottom of the page.
-
-Alternately, if you created an API access token, you can make a POST request to `https://{DOMAIN}/activitypub/accounts/{USERNAME}/create_note`.
-The request should have the header `Authorization: Bearer {ACCESS_TOKEN}`, and a POST parameter `content` with the text of the post.
 
 ## Inbox handlers
 
