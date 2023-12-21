@@ -95,7 +95,7 @@ def signed_post(url, private_key, public_key_url, headers = None, body = None):
     headers["host"] = host
     headers["content-type"] = content_type
     headers["signature"] = signature_header
-    headers["user-agent"] = "CLPs activitypub bot"
+    headers["user-agent"] = "hashtag.place"
 
     response = requests.post(url, data = body, headers = headers)
     print(f"Sent to {url}!")
